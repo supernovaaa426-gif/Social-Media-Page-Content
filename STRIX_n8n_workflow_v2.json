@@ -1,0 +1,334 @@
+{
+  "name": "STRIX - Approved Content to Facebook (v2)",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## STRIX Auto-Publish Workflow (v2)\n\n1. Reads the STRIX Content Queue sheet\n2. Keeps only rows where Status = Approved\n3. For each: finds the image in Drive, downloads it, uploads it to the public GitHub repo, waits for it to propagate, builds its public URL, posts it to the Facebook Page, then marks the row Posted\n\nYou approve rows manually in the Google Sheet (Draft -> Approved) - nothing here posts anything you haven't reviewed.\n\nNOTE: the \"Upload to GitHub\" node has not been live-tested yet (everything from \"Find Image File\" onward through Facebook HAS been tested and confirmed working today, using an image already sitting in GitHub). If the GitHub upload step errors, the most likely fix is the binary-to-base64 expression on that node - flag it and we'll debug it together.",
+        "height": 340,
+        "width": 420
+      },
+      "id": "note-overview",
+      "name": "Read Me",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [-220, -80]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 9 * * *"
+            }
+          ]
+        }
+      },
+      "id": "trigger-schedule",
+      "name": "Daily Check (9am)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [240, 260]
+    },
+    {
+      "parameters": {},
+      "id": "trigger-manual",
+      "name": "Manual Test",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [240, 420]
+    },
+    {
+      "parameters": {
+        "resource": "sheet",
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "value": "1kq3RH39gfpg4i_b2LlV3Wf0UM2naObPE_rZrxTEzuE0",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Sheet1"
+        },
+        "options": {}
+      },
+      "id": "read-queue",
+      "name": "Read Content Queue",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [460, 340],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "REPLACE_ME",
+          "name": "Google Sheets - STRIX"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "cond-approved",
+              "leftValue": "={{ $json.Status }}",
+              "rightValue": "Approved",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "filter-approved",
+      "name": "Only Approved",
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2,
+      "position": [680, 340]
+    },
+    {
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      },
+      "id": "loop-items",
+      "name": "Process One By One",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [900, 340]
+    },
+    {
+      "parameters": {
+        "content": "All rows done - nothing more to post this run.",
+        "height": 120,
+        "width": 260
+      },
+      "id": "note-done",
+      "name": "Done",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [900, 540]
+    },
+    {
+      "parameters": {
+        "resource": "fileFolder",
+        "operation": "search",
+        "searchMethod": "query",
+        "queryString": "={{ \"'19ScbgArOU6meuIreXfum9aAyOiNyqQsp' in parents and name = '\" + $json[\"Image filename\"] + \"'\" }}",
+        "filter": {},
+        "options": {}
+      },
+      "id": "drive-search",
+      "name": "Find Image File",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [1120, 220],
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "REPLACE_ME",
+          "name": "Google Drive - STRIX"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "file",
+        "operation": "download",
+        "fileId": {
+          "__rl": true,
+          "value": "={{ $json.id }}",
+          "mode": "id"
+        },
+        "options": {}
+      },
+      "id": "drive-download",
+      "name": "Download Image",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [1340, 220],
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "REPLACE_ME",
+          "name": "Google Drive - STRIX"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "PUT",
+        "url": "={{ \"https://api.github.com/repos/supernovaaa426-gif/Social-Media-Page-Content/contents/\" + $('Only Approved').item.json[\"Image filename\"] }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "Bearer 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" },
+            { "name": "Accept", "value": "application/vnd.github+json" },
+            { "name": "User-Agent", "value": "STRIX-n8n-bot" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ message: \"Add \" + $('Only Approved').item.json[\"Image filename\"], content: $binary.data.toBase64(), branch: \"main\" }) }}",
+        "options": {}
+      },
+      "id": "github-upload",
+      "name": "Upload to GitHub",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [1560, 220]
+    },
+    {
+      "parameters": {
+        "amount": 60,
+        "unit": "seconds"
+      },
+      "id": "wait-propagate",
+      "name": "Wait for GitHub Pages",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [1780, 220]
+    },
+    {
+      "parameters": {
+        "mode": "manual",
+        "duplicateItem": false,
+        "assignments": {
+          "assignments": [
+            {
+              "id": "assign-url",
+              "name": "publicImageUrl",
+              "type": "string",
+              "value": "={{ \"https://supernovaaa426-gif.github.io/Social-Media-Page-Content/\" + $('Only Approved').item.json[\"Image filename\"] }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "build-url",
+      "name": "Build Public Image URL",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [2000, 220]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://graph.facebook.com/v21.0/1308188299034592/photos",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "User-Agent", "value": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            { "name": "url", "value": "={{ $json.publicImageUrl }}" },
+            { "name": "caption", "value": "={{ $('Only Approved').item.json.Caption + '\\n\\n' + $('Only Approved').item.json.Hashtags }}" },
+            { "name": "published", "value": "true" },
+            { "name": "access_token", "value": "EAAZAKQqhtP34BSN1ixOMtXKqXVsYFOccSlHyl6u36mHc7KaBouWWnY8YhIfcZCwPtFrntmmk7S7xYqd8e4HacU1zq9skJmfm41yyZAZCwHvE6WXUQSZCP0XpHeCkpUVA1B9iBXRljv01U3nmDTXue2Vmm8SQTwkY5vmf2QNV5HvxF6SLSefip30grH2Y4h815uFGZC" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "fb-post",
+      "name": "Post Photo to Facebook Page",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [2220, 220]
+    },
+    {
+      "parameters": {
+        "resource": "sheet",
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "1kq3RH39gfpg4i_b2LlV3Wf0UM2naObPE_rZrxTEzuE0",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Sheet1"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "matchingColumns": ["Image filename"],
+          "value": {
+            "Image filename": "={{ $('Only Approved').item.json['Image filename'] }}",
+            "Status": "Posted",
+            "Notes": "={{ 'Posted ' + $now.toISO() + ' | FB Photo ID: ' + $json.id + ' | Post ID: ' + $json.post_id }}"
+          }
+        },
+        "options": {}
+      },
+      "id": "sheets-update",
+      "name": "Mark as Posted",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [2440, 220],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "REPLACE_ME",
+          "name": "Google Sheets - STRIX"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Daily Check (9am)": {
+      "main": [[{ "node": "Read Content Queue", "type": "main", "index": 0 }]]
+    },
+    "Manual Test": {
+      "main": [[{ "node": "Read Content Queue", "type": "main", "index": 0 }]]
+    },
+    "Read Content Queue": {
+      "main": [[{ "node": "Only Approved", "type": "main", "index": 0 }]]
+    },
+    "Only Approved": {
+      "main": [[{ "node": "Process One By One", "type": "main", "index": 0 }]]
+    },
+    "Process One By One": {
+      "main": [
+        [],
+        [{ "node": "Find Image File", "type": "main", "index": 0 }]
+      ]
+    },
+    "Find Image File": {
+      "main": [[{ "node": "Download Image", "type": "main", "index": 0 }]]
+    },
+    "Download Image": {
+      "main": [[{ "node": "Upload to GitHub", "type": "main", "index": 0 }]]
+    },
+    "Upload to GitHub": {
+      "main": [[{ "node": "Wait for GitHub Pages", "type": "main", "index": 0 }]]
+    },
+    "Wait for GitHub Pages": {
+      "main": [[{ "node": "Build Public Image URL", "type": "main", "index": 0 }]]
+    },
+    "Build Public Image URL": {
+      "main": [[{ "node": "Post Photo to Facebook Page", "type": "main", "index": 0 }]]
+    },
+    "Post Photo to Facebook Page": {
+      "main": [[{ "node": "Mark as Posted", "type": "main", "index": 0 }]]
+    },
+    "Mark as Posted": {
+      "main": [[{ "node": "Process One By One", "type": "main", "index": 0 }]]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  }
+}
